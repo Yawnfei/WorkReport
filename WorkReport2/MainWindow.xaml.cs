@@ -6,6 +6,7 @@ using System;
 using System.IO;
 using System.Windows.Documents;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace WorkReport
 {
@@ -70,26 +71,69 @@ namespace WorkReport
 
         private void Zip_Button_Click(object sender, RoutedEventArgs e)
         {
-            OpenFileDialog folderCompsDialog = new() 
+            var folderDialog = new CommonOpenFileDialog()
             {
-           
-                
+                IsFolderPicker = true,
+                Title = "Выберите папку с файлами"
             };
 
-            bool? result = folderCompsDialog.ShowDialog();
-
-            if (result == true)
+            if (folderDialog.ShowDialog() == CommonFileDialogResult.Ok)
             {
-                string zipPath = folderCompsDialog.FileName;
-                string[] filesToAdd = folderCompsDialog.FileNames;
-                ArchiveCreator(zipPath, filesToAdd);
+                string selectedFolder = folderDialog.FileName;
+                var files = Directory.GetFiles(selectedFolder);
+
+                // Находим все Excel-файлы
+                var excelFiles = files.Where(f => Path.GetExtension(f).Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                                                  Path.GetExtension(f).Equals(".xls", StringComparison.OrdinalIgnoreCase))
+                                      .ToList();
+
+                // Проходим по каждому Excel файлу
+                foreach (var excelFile in excelFiles)
+                {
+                    string baseName = Path.GetFileNameWithoutExtension(excelFile);
+
+                    // Паттерн для поиска всех фото с таким же базовым именем
+                    // Включаем фото без номера и с номерами в скобках
+                    string pattern = $"^{Regex.Escape(baseName)}(\\(\\d+\\))?$";
+
+                    // Находим все файлы, которые соответствуют этому паттерну (фото + Excel)
+                    var relatedFiles = files.Where(f => Regex.IsMatch(Path.GetFileNameWithoutExtension(f), pattern)).ToList();
+
+                    // ОБЯЗАТЕЛЬНО добавляем Excel файл в список файлов
+                    if (!relatedFiles.Contains(excelFile))
+                    {
+                        relatedFiles.Add(excelFile); // Добавляем сам Excel файл
+                    }
+
+                    // Создаем архив, если есть хотя бы один файл
+                    if (relatedFiles.Count > 0)
+                    {
+                        string zipPath = Path.Combine(selectedFolder, baseName + ".zip");
+                        CreateArchive(zipPath, relatedFiles.ToArray());
+                    }
+                }
+
+                MessageBox.Show("Архивация завершена!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                MessageBox.Show("Файлы не выбраны", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                MessageBox.Show("Действие прервано, попробуйте снова.");
             }
-
         }
+
+        private void CreateArchive(string zipPath, string[] filesToAdd)
+        {
+            using (ZipArchive archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                foreach (string file in filesToAdd)
+                {
+                    // Убедимся, что мы добавляем файл в архив с правильным именем
+                    archive.CreateEntryFromFile(file, Path.GetFileName(file));
+                }
+            }
+        }
+
+
 
         private void Clear_Button_Click(object sender, RoutedEventArgs e)
         {
@@ -185,5 +229,7 @@ namespace WorkReport
 
            
         }
+
+       
     }
 }
